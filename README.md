@@ -1,34 +1,61 @@
 Ansible Role: Docker Swarm
 ==========================
 
-[![Build Status](https://travis-ci.org/atosatto/ansible-dockerswarm.svg?branch=master)](https://travis-ci.org/atosatto/ansible-dockerswarm)
-
-Setup a Docker Swarm cluster on RHEL/CentOS and Debian/Ubuntu servers
-using the new Docker Engine's "Swarm Mode" (https://docs.docker.com/engine/swarm/).
+This Ansible Role is a fork of [atosatto/ansible-dockerswarm](https://github.com/atosatto/ansible-dockerswarm), customized to bootstrap a set of VMs to become a Docker Swarm, setup vSphere VDVS and setup all necessary Docker Secrets.  This requires Docker 1.12.0 or higher.
 
 Requirements
 ------------
+Role contains credentials and secrets in vars/secrets.yml therefore this file is encrypted with ansible-vault.  
+In order to decrypt it you need to have file which contains passphrase. Location of the file needs to be passed to ansible-playbook call
+Signed certs and keys are pulled from Hashicorp Vault.
 
-None.
+
+```
+ansible-playbook docker-swarm/playbook.yml --vault-password-file=~/.vault_pass.txt
+```
 
 Role Variables
 --------------
 
 Available variables are listed below, along with default values (see defaults/main.yml):
 
-    docker_repo: main
-    # docker_repo: testing
-    # docker_repo: experimental
+    skip_group: True
+    skip_swarm: False
+    skip_vdvs: False
+    skip_secrets: False
+    driver_alias: vsphere
+    vdvs_plugin_name: vmware/docker-volume-vsphere
+    docker_plugin_registry: docker-registry.acme.com
+    vdvs_version: "0.20" #this needs to be string value so use quotes!
 
-The repo from which install Docker. Override the default to install
-testing or experimental docker builds.
+`skip_vdvs` is used to determine whether vSphere Docker Volume Service plugin should be installed.
+
+`driver_alias` is what to call the vSphere Docker Volume Storage plugin locally
+
+`vdvs_plugin_name` is the name of the vSphere Docker Volume Storage plugin in the plugin repo
+
+`docker_plugin_registry` is the name/url of the Docker plugin registry.  Change this if you need to download the plugin from a different location.
+More info our local plugin repo can be found in [Conluence](https://eagleinvsys.atlassian.net/wiki/spaces/M2/pages/61702249/Docker+Repository#DockerRepository-CreatingaDockerRepositoryForPlugins)
+
+`vdvs_version` is where you define version of vSphere Docker Volume Storage plugin.
+  NOTE: if you update this you need to edit also ansible-role-vdvs-esx/defaults/main.yml
+
+`skip_secrets` if used secrets from vault will be obtained and stored in docker with docker secret command.
+For now eagleinvsys.crt and eagleinvsys.key are loaded to docker. Both secrets and vault configs are stored in vars/vault.yml
+The file is encrypted with ansible-vault. If you want to use secrets in docker container you can set it in docker-compose file:
+```
+secrets:
+  acme.crt:
+    external: true
+  acme.key:
+    external: true
+```
+This will make files available at /run/secrets dir in docker container
 
     docker_dependencies: "{{ default_docker_dependencies }}"
 
 Extra packages that have to installed together with Docker.
 The value of `default_docker_dependencies` depends on the target OS family.
-> **NB**: If you are installing Docker on a Raspberry running Raspbian or any other Debian-like OS make sure to set
-`docker_dependencies: [ ]` otherwise Ansible will fail because the `linux-image-extra-virtual` package is not available for the `arm` architecture (see issue #4).
 
     docker_swarm_interface: "{{ ansible_default_ipv4['alias'] }}"
 
@@ -44,84 +71,37 @@ the `docker_swarm_addr` variable value in your playbook.
 
 Listening port where the raft APIs will be exposed.
 
-    docker_admin_users:
-      - "{{ ansible_user }}"
-
-The list of users that has to be added to the `docker_group` to interact with the Docker daemon.
-**NB**: The users must already exist in the system.
-
-    skip_engine: False
-    skip_group: False
-    skip_swarm: False
-    skip_docker_py: False
-
-Setting `skip_engine: True` will make the role skip the installation of `docker-engine`.
-If you want to use this role to just install `docker-engine` without enabling `swarm-mode` set `skip_swarm: True`.
-To skip the tasks adding the `docker_admin_users` to the `docker_group` set `skip_group: True`.
-Finally, the `docker-py` installation task can be skipped setting `skip_docker_py` to `True`.
-
-Swarm node labels
------------------
-
-[Node labels](https://docs.docker.com/engine/swarm/manage-nodes/#add-or-remove-label-metadata) provide a
-flexible method of node organization. You can also use node labels in service constraints.
-Apply constraints when you create a service to limit the nodes where the scheduler assigns tasks for the service.
-You can define labels by `swarm_labels` variable, e.g:
-
-    $ cat inventory
-    ...
-    [docker_swarm_manager]
-    swarm-01 swarm_labels=deploy
-
-    [docker_swarm_worker]
-    swarm-02 swarm_labels='["libvirt", "docker", "foo", "bar"]'
-    swarm-03
-    ...
-
-In this case:
-
-    $ docker inspect --format '{{json .Spec.Labels}}'  swarm-02 | jq
-    {
-       "bar": "true",
-       "docker": "true",
-       "for": "true",
-       "libvirt": "true",
-    }
-
-You can assign labels to cluster running playbook with `--tags=swarm_labels`
-
-**NB**: Please note, all labels that are not defined in inventory will be removed
-
 Dependencies
 ------------
 
-None.
+[ansible-role-docker](https://www.google.com) 
 
 Example Playbook
 ----------------
 
     $ cat inventory
-    swarm-01 ansible_ssh_host=172.10.10.1
-    swarm-02 ansible_ssh_host=172.10.10.2
-    swarm-03 ansible_ssh_host=172.10.10.3
-
-    [docker_engine]
-    swarm-01
-    swarm-02
-    swarm-03
-
     [docker_swarm_manager]
-    swarm-01 swarm_labels=deploy
+    swm01.acme.com
+    swm02.acme.com
+    swm03.acme.com
 
     [docker_swarm_worker]
-    swarm-02 swarm_labels='["libvirt", "docker", "foo", "bar"]'
-    swarm-03
+    sww01.acme.com
+    sww02.acme.com
+    sww03.acme.com
+    sww04.acme.com
+    sww05.acme.com
 
     $ cat playbook.yml
-    - name: "Provision Docker Swarm Cluster"
-      hosts: all
+    - name: "Provision Docker Swarm"
+      hosts: docker_swarm*
       roles:
-        - { role: atosatto.docker-swarm }
+        - { role: ansible-role-docker-swarm }
+
+Example Execution
+----------------
+
+    $ ansible-playbook docker-swarm/playbook.yml -i docker-swarm/inventory --vault-password-file=~/.vault_pass.txt --extra-vars "docker_plugin_registry=docker-registry.acme.com"
 
 License
 -------
@@ -131,4 +111,4 @@ MIT
 Author Information
 ------------------
 
-Andrea Tosatto ([@\_hilbert\_](https://twitter.com/_hilbert_))
+EIS EngOps Team

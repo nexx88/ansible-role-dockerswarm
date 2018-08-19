@@ -8,22 +8,29 @@ docker_repo: main
 # Extra packages that have to be installed together with Docker
 docker_dependencies: "{{ default_docker_dependencies }}"
 
-# Docker swarm network can be define in order to be sure that
-# swarm cluster doesn't overlap with you infrastructure
-# docker_swarm_network: 10.10.8.0/24
-
-# You can set any interface, that is listened by docker engine.
-# e.g. docker_swarm_interface: "eth1"
-docker_swarm_interface: "{{ ansible_default_ipv4['interface'] }}"
+# Docker Swarm networking setup
+docker_swarm_interface: "{{ ansible_default_ipv4['alias'] }}"
+# Instead of {{ ansible_default_ipv4['alias'] }} you can set any interface, that is listened by docker engine.
+# docker_swarm_interface: "eth1"
 docker_swarm_addr: "{{ hostvars[inventory_hostname]['ansible_' + docker_swarm_interface]['ipv4']['address'] }}"
 docker_swarm_port: 2377
 
 # List of the users in the Docker group
 docker_admin_users:
-  - "{{ ansible_user | default(ansible_user_id) }}" # if ansible_user is not defined, we default to the ansible ansible_user_id fact
+  - "{{ ansible_user }}"
 
-# Switches disabling the docker-engine, docker group and swarm-mode setup.
-skip_engine: False # if true, skip the docker engine installation
-skip_group: False  # if true, does not add the docker_admin_users to the docker_group_name
+# Switches disabling the docker-engine or swarm-mode setup.
+skip_group: True  # if true, does not add the docker_admin_users to the docker_group_name
 skip_swarm: False  # if true, skip the swarm setup
-skip_docker_py: False # if true, skip the docker-py
+skip_vdvs: True  # if true, skip the vdvs setup
+skip_secrets: False  # if true, skip the secrets creation
+skip_networks: False  # if true, skip the secrets creation
+
+# VDVS Driver parameters
+driver_alias: vsphere
+vdvs_plugin_name: vmware/vsphere-storage-for-docker
+docker_plugin_registry: docker-registry.acme.com
+vdvs_version: "0.21"
+
+vault_addr: "{{ lookup('consul_kv', 'infrastructure/vault/address') }}"
+vault_cert: "{{ lookup('consul_kv', 'infrastructure/vault/validate_certs') }}"

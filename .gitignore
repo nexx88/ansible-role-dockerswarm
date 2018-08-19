@@ -1,6 +1,5 @@
 .molecule/
 .vagrant/
-molecule/*/tests/.cache/
-molecule/*/tests/__pycache__/
+tests/.cache/
+
 *.retry
-.idea/

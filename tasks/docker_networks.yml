@@ -1,0 +1,19 @@
+---
+- block:
+  - name: Include network info
+    include_vars:
+     file: networks.yml
+     name: networks
+  
+  - name: Get list of existing networks
+    command: "docker network ls --format '{{ '{{' }} .Name {{ '}}' }}'"
+    register: existing_networks
+  
+  - name:
+    debug: msg={{networks.networks}}
+  - name: Create network if missing
+    command: "docker network create {{item.name}} --driver={{item.driver}}"
+    when: "'{{item.name}}' not in existing_networks.stdout_lines"
+    with_items: "{{networks.networks}}"
+  when: inventory_hostname == groups['docker_swarm_manager'][0]
+
